@@ -183,8 +183,7 @@
     <div class="icon" onclick="openW('win-arch')"><img src="https://cdn-icons-png.flaticon.com/512/2920/2920244.png"><span>Kernel</span></div>
 </div>
 
-
-<!-- Ventana Navegador -->
+    <!-- Ventana Navegador -->
 <div class="window" id="win-browser" style="width: 850px; height: 550px; top: 50px; left: 100px;">
     <div class="title-bar"><span>🌐 Garras Browser v7.0</span><button class="win-btn" onclick="closeW('win-browser')">X</button></div>
     <div class="win-content">
@@ -262,8 +261,7 @@
     <div id="taskbar-buttons"></div>
     <div id="clock">00:00:00</div>
 </div>
-
-  <script>
+<script>
     // ==================== SISTEMA DE ARCHIVOS VIRTUAL CON PERSISTENCIA ====================
     let virtualFS = JSON.parse(localStorage.getItem('nexus_fs')) || {
         '/': { type: 'dir', content: {
@@ -552,3 +550,102 @@
             btn.innerHTML = name;
             btn.onclick = () => {
                 let win = document.getElementById(winId);
+                if (win.style.display === 'block') {
+                    win.style.display = 'none';
+                    btn.classList.remove('active');
+                } else {
+                    win.style.display = 'block';
+                    btn.classList.add('active');
+                }
+            };
+            container.appendChild(btn);
+        });
+    }
+
+    // DRAG AND DROP MEJORADO
+    let dragTarget = null, dragOffsetX = 0, dragOffsetY = 0;
+    function setupDrag() {
+        document.querySelectorAll('.title-bar').forEach(bar => {
+            bar.addEventListener('mousedown', (e) => {
+                let win = bar.closest('.window');
+                if (!win) return;
+                dragTarget = win;
+                dragOffsetX = e.clientX - win.offsetLeft;
+                dragOffsetY = e.clientY - win.offsetTop;
+                win.style.zIndex = 999;
+                document.addEventListener('mousemove', onMouseMove);
+                document.addEventListener('mouseup', onMouseUp);
+                e.preventDefault();
+            });
+        });
+    }
+    function onMouseMove(e) {
+        if (!dragTarget) return;
+        let newLeft = e.clientX - dragOffsetX;
+        let newTop = e.clientY - dragOffsetY;
+        newLeft = Math.max(0, Math.min(newLeft, window.innerWidth - dragTarget.offsetWidth));
+        newTop = Math.max(0, Math.min(newTop, window.innerHeight - dragTarget.offsetHeight - 45));
+        dragTarget.style.left = newLeft + 'px';
+        dragTarget.style.top = newTop + 'px';
+    }
+    function onMouseUp() { dragTarget = null; document.removeEventListener('mousemove', onMouseMove); document.removeEventListener('mouseup', onMouseUp); }
+
+    // RELOJ Y BOOT
+    function updateClock() {
+        let now = new Date();
+        document.getElementById('clock').innerHTML = now.toLocaleTimeString() + ' | ' + now.toLocaleDateString();
+        let sessionSpan = document.getElementById('session-stats');
+        if (sessionSpan && window.sessionStart) {
+            let mins = Math.floor((Date.now() - window.sessionStart) / 60000);
+            sessionSpan.innerHTML = `Sesión: ${mins} min`;
+        }
+        setTimeout(updateClock, 1000);
+    }
+
+    function runBoot() {
+        let f = document.getElementById('p-fill'), t = document.getElementById('status-text'), l = 0;
+        let i = setInterval(() => {
+            l += Math.floor(Math.random() * 5) + 2;
+            if (l > 100) l = 100;
+            f.style.width = l + "%";
+            t.innerText = "SISTEMA INICIANDO: " + l + "%";
+            if (l === 100) {
+                clearInterval(i);
+                setTimeout(() => {
+                    document.getElementById('boot').style.display = 'none';
+                    document.getElementById('desktop').style.display = 'flex';
+                    window.sessionStart = Date.now();
+                    startMatrixEffect();
+                    showNotification('✅ NEXUS OS v2.0 Listo. Comandante Saúl.', 'success');
+                }, 500);
+            }
+        }, 40);
+    }
+
+    // ATAJOS DE TECLADO
+    document.addEventListener('keydown', (e) => {
+        if (e.ctrlKey && e.key === 'w') {
+            e.preventDefault();
+            activeWindows.forEach(id => { if (document.getElementById(id).style.display === 'block') closeW(id); });
+        }
+        if (e.ctrlKey && e.altKey && e.key === 't') {
+            e.preventDefault();
+            openW('win-terminal');
+        }
+        if (e.key === 'Escape') {
+            document.getElementById('start-menu').style.display = 'none';
+        }
+    });
+
+    // INICIALIZACIÓN
+    window.onload = () => {
+        runBoot();
+        setupDrag();
+        updateClock();
+        refreshFileExplorer();
+        setInterval(() => refreshFileExplorer(), 5000);
+    };
+</script>
+</body>
+</html>
+    
