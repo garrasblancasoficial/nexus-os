@@ -1,0 +1,35 @@
+# NEXUS OS v2.0
+
+Sistema Operativo Hyper-Conectado con IA integrada.
+
+## Características
+
+- 🧠 **Mike-IA**: Asistente inteligente con conexión a internet
+- 📱 **App Store**: Instala y crea tus propias aplicaciones
+- 📁 **Sistema de archivos virtual**: Crea, edita y organiza archivos
+- 💻 **Terminal**: Comandos tipo Linux
+- 🎨 **Personalización**: Wallpapers, temas, efectos Matrix
+- 🔊 **Sistema de sonidos**: Efectos y música de fondo
+
+## Instalación
+
+1. Descarga todos los archivos en una carpeta
+2. Abre `index.html` en tu navegador
+3. ¡Disfruta de Nexus OS!
+
+## Atajos de teclado
+
+- `Ctrl + W`: Cerrar todas las ventanas
+- `Ctrl + Alt + T`: Abrir terminal
+- `Ctrl + Alt + W`: Cambiar wallpaper
+- `ESC`: Cerrar menú inicio
+
+## Comandos de terminal
+
+- `help` - Lista de comandos
+- `ls` - Listar archivos
+- `cd` - Cambiar directorio
+- `pwd` - Mostrar ruta actual
+- `clear` - Limpiar terminal
+- `theme <color>` - Cambiar tema
+- `status` - Estado del sistema
