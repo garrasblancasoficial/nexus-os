@@ -1,0 +1,16 @@
+{
+  "name": "Nexus OS",
+  "short_name": "Nexus",
+  "description": "Sistema Operativo Hyper-Conectado",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#0a0f0f",
+  "theme_color": "#000080",
+  "icons": [
+    {
+      "src": "icon.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
