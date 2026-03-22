@@ -1,0 +1,686 @@
+<script>
+    // ==================== CONFIGURACIÓN Y PERSISTENCIA ====================
+    let config = JSON.parse(localStorage.getItem('nexus_config')) || {
+        wallpaper: 'default',
+        theme: '#0a0f0f',
+        matrixEnabled: true,
+        aiMode: 'online', // 'online' o 'local'
+        aiApiKey: '', // Para APIs que requieran key
+        conversationHistory: []
+    };
+    
+    let virtualFS = JSON.parse(localStorage.getItem('nexus_fs')) || {
+        '/': { type: 'dir', content: {
+            'notas.txt': { type: 'file', content: 'Bienvenido a Nexus OS\nCreado: ' + new Date().toLocaleString() },
+            'wallpapers': { type: 'dir', content: {} },
+            'sistema': { type: 'dir', content: {} },
+            'misiones': { type: 'dir', content: {} }
+        }}
+    };
+    
+    let currentPath = '/';
+    let mikeMemory = [];
+    let activeWindows = [];
+    let incognitoMode = false;
+    let matrixInterval = null;
+    let aiStatus = 'online'; // 'online', 'local', 'error'
+    
+    function saveFS() { localStorage.setItem('nexus_fs', JSON.stringify(virtualFS)); }
+    function saveConfig() { localStorage.setItem('nexus_config', JSON.stringify(config)); }
+    
+    // ==================== IA CONEXIÓN A INTERNET ====================
+    async function queryMikeAI(pregunta, contexto = '') {
+        const display = document.getElementById('mike-display');
+        if (display) {
+            display.innerHTML += `<div class="sys-msg">⏳ MIKE: Conectando a red neuronal...</div>`;
+            display.scrollTop = display.scrollHeight;
+        }
+        
+        // Guardar en historial
+        config.conversationHistory.push({ role: 'user', content: pregunta });
+        if (config.conversationHistory.length > 20) config.conversationHistory.shift();
+        saveConfig();
+        
+        try {
+            // OPCIÓN 1: Usar API gratuita de All.ai (sin key)
+            const response = await fetch('https://api.all.ai/v1/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    model: 'gpt-3.5-turbo',
+                    messages: [
+                        { role: 'system', content: `Eres MIKE, una IA integrada en NEXUS OS. Tu comandante es Saúl. Responde de forma técnica, precisa y con estilo futurista. Usa emojis ocasionalmente. Contexto actual: ${contexto}` },
+                        ...config.conversationHistory.slice(-5)
+                    ]
+                })
+            });
+            
+            if (response.ok) {
+                const data = await response.json();
+                aiStatus = 'online';
+                return data.choices[0].message.content;
+            }
+        } catch (error) {
+            console.log('API primaria falló, intentando alternativa...');
+        }
+        
+        try {
+            // OPCIÓN 2: Usar API gratuita de Gemini (requiere key, pero podemos usar demo)
+            // Por ahora usamos búsqueda web alternativa
+            const searchResponse = await fetch(`https://api.duckduckgo.com/?q=${encodeURIComponent(pregunta)}&format=json&no_html=1&skip_disambig=1`);
+            if (searchResponse.ok) {
+                const data = await searchResponse.json();
+                if (data.AbstractText) {
+                    aiStatus = 'online';
+                    return `🔍 BÚSQUEDA WEB:\n${data.AbstractText.substring(0, 500)}${data.AbstractText.length > 500 ? '...' : ''}\n\n📎 Fuente: ${data.AbstractURL || 'DuckDuckGo'}`;
+                }
+            }
+        } catch (error) {
+            console.log('Búsqueda falló');
+        }
+        
+        try {
+            // OPCIÓN 3: Usar API de Hugging Face (gratuita, sin key para modelos pequeños)
+            const hfResponse = await fetch('https://api-inference.huggingface.co/models/microsoft/DialoGPT-small', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ inputs: pregunta })
+            });
+            
+            if (hfResponse.ok) {
+                const data = await hfResponse.json();
+                aiStatus = 'online';
+                return data.generated_text || `Procesando: "${pregunta}"... (respuesta generada por IA)`;
+            }
+        } catch (error) {
+            console.log('Hugging Face falló');
+        }
+        
+        // MODO LOCAL (fallback)
+        aiStatus = 'local';
+        return getLocalResponse(pregunta);
+    }
+    
+    // Respuestas locales inteligentes (fallback)
+    function getLocalResponse(pregunta) {
+        const lower = pregunta.toLowerCase();
+        
+        // Comandos del sistema
+        if (lower.includes('fondo') || lower.includes('wallpaper')) {
+            return `🖼️ Para cambiar el fondo usa: wallpaper "URL" en terminal, o menú INICIO → Cambiar Fondo.\n\n📌 Fondos recomendados:\n- https://images.unsplash.com/photo-1541701494587-cb58502866ab\n- https://i.imgur.com/4K9jQ8J.jpg`;
+        }
+        
+        if (lower.includes('archivos') || lower.includes('file')) {
+            const files = Object.keys(resolvePath('/')).length;
+            return `📁 Sistema de archivos activo. Total: ${files} elementos en raíz.\n📂 Usa 'ls' en terminal para listar, 'mkdir' para crear carpetas.`;
+        }
+        
+        if (lower.includes('estado') || lower.includes('cómo estás') || lower.includes('status')) {
+            return `🟢 ESTADO NEXUS OS v2.0\n━━━━━━━━━━━━━━━━━━━━━━\n📡 Conexión IA: ${aiStatus === 'online' ? '🟢 ONLINE' : '🟡 LOCAL'}\n🖼️ Fondo: ${config.wallpaper === 'default' ? 'Predeterminado' : 'Personalizado'}\n🌀 Matrix: ${config.matrixEnabled ? 'Activo' : 'Inactivo'}\n💾 Memoria: ${Math.round(performance.memory?.usedJSHeapSize / 1048576) || 'N/A'}MB\n👤 Comandante: Saúl (NEXUS-5)\n💬 Conversaciones: ${config.conversationHistory.length}`;
+        }
+        
+        if (lower.includes('terminal')) {
+            return `💻 Terminal Nexus activa.\n📖 Comandos disponibles: help, ls, cd, cat, echo, mkdir, rm, wallpaper, theme, matrix, status, mike, weather, news, search`;
+        }
+        
+        if (lower.includes('tiempo') || lower.includes('clima') || lower.includes('weather')) {
+            return `🌤️ Para obtener el clima, intenta: "clima en [ciudad]" o usa el comando: weather [ciudad] en terminal.`;
+        }
+        
+        if (lower.includes('noticias') || lower.includes('news')) {
+            return `📰 Para últimas noticias, usa el comando: news en terminal. ¡Mantente informado, Comandante!`;
+        }
+        
+        if (lower.includes('buscar') || lower.includes('search')) {
+            const busqueda = pregunta.replace(/buscar|search/gi, '').trim();
+            if (busqueda) {
+                return `🔍 Buscaré "${busqueda}" cuando tenga conexión a internet. Mientras, puedes usar el navegador Garras Browser.`;
+            }
+            return `🔍 Usa: buscar [término] para buscar en la web. Ejemplo: "buscar inteligencia artificial"`;
+        }
+        
+        if (lower.includes('gracias')) {
+            return `🙏 Siempre a tu servicio, Comandante Saúl. Nexus Operativo.`;
+        }
+        
+        if (lower.includes('hola')) {
+            return `👋 ¡Saludos, Comandante Saúl! MIKE-IA online. Memoria activa: ${mikeMemory.length + config.conversationHistory.length} interacciones. ¿En qué puedo ayudarte hoy?`;
+        }
+        
+        // Respuesta genérica con sugerencias
+        return `📡 MIKE: Procesando "${pregunta.substring(0, 50)}"...\n\n💡 SUGERENCIAS:\n- Usa "estado" para ver el sistema\n- "ayuda" para comandos disponibles\n- "buscar [término]" para buscar en web\n- "clima [ciudad]" para el tiempo\n\n🔄 Para respuestas online, asegúrate de tener conexión a internet.`;
+    }
+    
+    // Funciones adicionales de internet
+    async function getWeather(city) {
+        try {
+            const response = await fetch(`https://wttr.in/${encodeURIComponent(city)}?format=%C+%t+%w&lang=es`);
+            if (response.ok) {
+                const weather = await response.text();
+                return `🌤️ CLIMA en ${city}: ${weather}`;
+            }
+        } catch (error) {
+            return `⚠️ No se pudo obtener el clima. Verifica tu conexión o intenta con otra ciudad.`;
+        }
+        return `⚠️ Ciudad no encontrada. Ejemplo: "clima Madrid" o "weather London"`;
+    }
+    
+    async function getNews() {
+        try {
+            // API gratuita de NewsAPI (sin key para titulares)
+            const response = await fetch('https://api.allorigins.win/get?url=' + encodeURIComponent('https://feeds.bbci.co.uk/news/rss.xml'));
+            if (response.ok) {
+                const data = await response.json();
+                const parser = new DOMParser();
+                const xml = parser.parseFromString(data.contents, 'text/xml');
+                const items = xml.querySelectorAll('item');
+                let news = '📰 ÚLTIMAS NOTICIAS:\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n';
+                for (let i = 0; i < Math.min(5, items.length); i++) {
+                    const title = items[i].querySelector('title')?.textContent || '';
+                    news += `📌 ${title}\n`;
+                }
+                return news + '\n🔗 Más noticias en el navegador Garras Browser.';
+            }
+        } catch (error) {
+            return '⚠️ No se pudieron cargar las noticias. Verifica tu conexión a internet.';
+        }
+        return '⚠️ Error al obtener noticias. Intenta más tarde.';
+    }
+    
+    async function webSearch(query) {
+        try {
+            const response = await fetch(`https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`);
+            if (response.ok) {
+                const data = await response.json();
+                if (data.AbstractText) {
+                    return `🔍 RESULTADO: "${query}"\n\n${data.AbstractText.substring(0, 800)}${data.AbstractText.length > 800 ? '...' : ''}\n\n📎 Más info: ${data.AbstractURL || 'https://duckduckgo.com/?q=' + encodeURIComponent(query)}`;
+                } else if (data.RelatedTopics && data.RelatedTopics[0]) {
+                    return `🔍 BÚSQUEDA: "${query}"\n\n${data.RelatedTopics[0].Text?.substring(0, 500) || 'Sin resultados detallados'}\n\n📎 Busca más en Garras Browser.`;
+                }
+                return `🔍 Búsqueda de "${query}" completada.\n\n📎 Usa el navegador para resultados más detallados: https://duckduckgo.com/?q=${encodeURIComponent(query)}`;
+            }
+        } catch (error) {
+            return `⚠️ Error de búsqueda. Verifica tu conexión a internet.\n\n💡 Puedes buscar manualmente en Garras Browser: https://duckduckgo.com/?q=${encodeURIComponent(query)}`;
+        }
+        return `⚠️ No se pudo realizar la búsqueda. Intenta más tarde.`;
+    }
+    
+    // ==================== SISTEMA DE ARCHIVOS ====================
+    function resolvePath(path) {
+        if (path === '/') return virtualFS['/'].content;
+        let parts = path.split('/').filter(p => p);
+        let current = virtualFS['/'].content;
+        for (let part of parts) {
+            if (!current[part] || current[part].type !== 'dir') return null;
+            current = current[part].content;
+        }
+        return current;
+    }
+
+    function refreshFileExplorer() {
+        let explorer = document.getElementById('file-explorer');
+        if (!explorer) return;
+        let currentDir = resolvePath(currentPath);
+        if (!currentDir) currentPath = '/';
+        currentDir = resolvePath(currentPath);
+        explorer.innerHTML = `<div style="margin-bottom:10px; font-family:monospace;">📁 ${currentPath}</div>`;
+        explorer.innerHTML += `<div class="file-item" onclick="navigateTo('..')">🔙 .. (subir)</div>`;
+        for (let [name, item] of Object.entries(currentDir)) {
+            let icon = item.type === 'dir' ? '📁' : '📄';
+            let info = item.type === 'file' ? ` (${item.content.length} bytes)` : '';
+            explorer.innerHTML += `<div class="file-item" onclick="${item.type === 'dir' ? `navigateTo('${name}')` : `openFile('${name}')`}">${icon} ${name}${info}</div>`;
+        }
+    }
+
+    function navigateTo(name) {
+        if (name === '..') {
+            if (currentPath === '/') return;
+            let parts = currentPath.split('/').filter(p => p);
+            parts.pop();
+            currentPath = '/' + parts.join('/');
+            if (currentPath === '') currentPath = '/';
+        } else {
+            let newPath = currentPath === '/' ? '/' + name : currentPath + '/' + name;
+            if (resolvePath(newPath)) currentPath = newPath;
+        }
+        refreshFileExplorer();
+    }
+
+    function createFile() {
+        let name = prompt('Nombre del archivo:');
+        if (!name) return;
+        let current = resolvePath(currentPath);
+        if (current && !current[name]) {
+            current[name] = { type: 'file', content: '# Nuevo archivo\nCreado: ' + new Date().toLocaleString() };
+            saveFS();
+            refreshFileExplorer();
+            showNotification(`✅ Archivo ${name} creado`, 'success');
+        }
+    }
+
+    function createFolder() {
+        let name = prompt('Nombre de la carpeta:');
+        if (!name) return;
+        let current = resolvePath(currentPath);
+        if (current && !current[name]) {
+            current[name] = { type: 'dir', content: {} };
+            saveFS();
+            refreshFileExplorer();
+            showNotification(`📁 Carpeta ${name} creada`, 'success');
+        }
+    }
+
+    function openFile(name) {
+        let current = resolvePath(currentPath);
+        if (current && current[name] && current[name].type === 'file') {
+            let newContent = prompt(`Editando ${name}:`, current[name].content);
+            if (newContent !== null) {
+                current[name].content = newContent;
+                saveFS();
+                showNotification(`💾 Archivo ${name} guardado`, 'success');
+            }
+        }
+    }
+
+    // ==================== TERMINAL MEJORADA ====================
+    function executeTerminal(e) {
+        if (e.key === 'Enter') {
+            let input = document.getElementById('terminal-input');
+            let cmd = input.value.trim();
+            let display = document.getElementById('terminal-display');
+            if (!cmd) return;
+            display.innerHTML += `<div>> ${cmd}</div>`;
+            
+            processCommandAsync(cmd).then(output => {
+                display.innerHTML += `<div>${output}</div>`;
+                display.innerHTML += `<div id="terminal-prompt" class="sys-msg">nexus@system:${currentPath}$ </div>`;
+                display.scrollTop = display.scrollHeight;
+            });
+            
+            input.value = '';
+        }
+    }
+    
+    async function processCommandAsync(cmd) {
+        let parts = cmd.split(' ');
+        
+        switch (parts[0]) {
+            case 'help': return `📖 COMANDOS NEXUS v2.0 (CONECTADO A INTERNET)\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📁 ARCHIVOS: ls, cd, cat, echo, mkdir, rm, pwd, clear\n🖼️ PERSONALIZACIÓN: theme, wallpaper, matrix\n🌐 INTERNET: mike [pregunta], weather [ciudad], news, search [término]\n🤖 IA: mike "pregunta" - ¡Conecta a IA real!\n📊 SISTEMA: status, help\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n💡 MIKE ahora está conectado a internet. ¡Pregúntale cualquier cosa!`;
+            
+            case 'ls': { let dir = resolvePath(currentPath); return dir ? Object.keys(dir).join('  ') || '(vacío)' : 'Error'; }
+            case 'cd': {
+                if (!parts[1]) return 'Uso: cd <dir>';
+                if (parts[1] === '..') {
+                    if (currentPath !== '/') {
+                        let p = currentPath.split('/').filter(p => p);
+                        p.pop();
+                        currentPath = '/' + p.join('/') || '/';
+                    }
+                    return `→ ${currentPath}`;
+                }
+                let newPath = currentPath === '/' ? '/' + parts[1] : currentPath + '/' + parts[1];
+                if (resolvePath(newPath)) { currentPath = newPath; return `→ ${currentPath}`; }
+                return 'Error: directorio no existe';
+            }
+            case 'cat': {
+                if (!parts[1]) return 'Uso: cat <archivo>';
+                let current = resolvePath(currentPath);
+                if (current && current[parts[1]] && current[parts[1]].type === 'file') return current[parts[1]].content;
+                return 'Archivo no encontrado';
+            }
+            case 'echo': {
+                let match = cmd.match(/echo "?(.+?)"? > (.+)/);
+                if (match) {
+                    let current = resolvePath(currentPath);
+                    if (current) { current[match[2]] = { type: 'file', content: match[1] }; saveFS(); refreshFileExplorer(); return `✅ Archivo ${match[2]} creado`; }
+                }
+                return 'Formato: echo "texto" > archivo.txt';
+            }
+            case 'mkdir': {
+                if (!parts[1]) return 'Uso: mkdir <carpeta>';
+                let current = resolvePath(currentPath);
+                if (current && !current[parts[1]]) { current[parts[1]] = { type: 'dir', content: {} }; saveFS(); refreshFileExplorer(); return `📁 Carpeta ${parts[1]} creada`; }
+                return 'Error: ya existe';
+            }
+            case 'rm': {
+                if (!parts[1]) return 'Uso: rm <archivo>';
+                let current = resolvePath(currentPath);
+                if (current && current[parts[1]]) { delete current[parts[1]]; saveFS(); refreshFileExplorer(); return `🗑️ ${parts[1]} eliminado`; }
+                return 'No encontrado';
+            }
+            case 'pwd': return currentPath;
+            case 'clear': document.getElementById('terminal-display').innerHTML = '<div>> Terminal limpiada.</div><div id="terminal-prompt" class="sys-msg">nexus@system:~$ </div>'; return '';
+            
+            case 'mike': {
+                let pregunta = cmd.substring(5).replace(/["']/g, '').trim();
+                if (!pregunta) return 'Uso: mike "tu pregunta aquí"';
+                const respuesta = await queryMikeAI(pregunta, `Directorio actual: ${currentPath}`);
+                return `🤖 MIKE: ${respuesta}`;
+            }
+            
+            case 'weather': {
+                let city = parts.slice(1).join(' ');
+                if (!city) return 'Uso: weather [ciudad] o clima [ciudad]';
+                return await getWeather(city);
+            }
+            
+            case 'news': {
+                return await getNews();
+            }
+            
+            case 'search': {
+                let query = parts.slice(1).join(' ');
+                if (!query) return 'Uso: search [término de búsqueda]';
+                return await webSearch(query);
+            }
+            
+            case 'theme': 
+                if (parts[1]) { 
+                    document.body.style.background = parts[1];
+                    document.body.style.backgroundImage = 'none';
+                    config.theme = parts[1];
+                    config.wallpaper = 'default';
+                    saveConfig();
+                    return `🎨 Tema cambiado a ${parts[1]}`; 
+                } 
+                return 'Uso: theme <color>';
+            
+            case 'wallpaper':
+                if (parts[1]) {
+                    setWallpaper(parts[1]);
+                    return `🖼️ Aplicando fondo: ${parts[1]}`;
+                }
+                return 'Uso: wallpaper <URL_imagen>';
+            
+            case 'matrix': 
+                if (parts[1] === 'on') { startMatrixEffect(); config.matrixEnabled = true; saveConfig(); return '🌀 Matrix activado'; } 
+                else if (parts[1] === 'off') { stopMatrixEffect(); config.matrixEnabled = false; saveConfig(); return '🌀 Matrix desactivado'; } 
+                return 'Uso: matrix on/off';
+            
+            case 'status':
+                return `🟢 ESTADO NEXUS OS v2.0\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📡 Conexión IA: ${aiStatus === 'online' ? '🟢 ONLINE (Internet)' : aiStatus === 'error' ? '🔴 ERROR' : '🟡 MODO LOCAL'}\n📁 Archivos: ${Object.keys(resolvePath('/')).length}\n🖼️ Fondo: ${config.wallpaper === 'default' ? 'Por defecto' : 'Personalizado'}\n🌀 Matrix: ${config.matrixEnabled ? 'Activo' : 'Inactivo'}\n💾 Memoria: ${Math.round(performance.memory?.usedJSHeapSize / 1048576) || 'N/A'}MB\n👤 Comandante: Saúl (NEXUS-5)\n💬 Conversaciones: ${config.conversationHistory.length}\n🌐 Navegador: Garras Browser v7.0`;
+            
+            default: 
+                return `❌ Comando no reconocido: ${cmd}\n📖 Escribe 'help' para lista completa\n💡 Prueba "mike tu pregunta" para hablar con IA`;
+        }
+    }
+
+    // ==================== WALLPAPER ====================
+    function setWallpaper(url) {
+        if (!url || url === 'default') {
+            document.body.style.background = config.theme || '#0a0f0f';
+            document.body.style.backgroundImage = 'none';
+            config.wallpaper = 'default';
+            showNotification('🖼️ Fondo restaurado', 'success');
+        } else {
+            let img = new Image();
+            img.onload = function() {
+                document.body.style.background = `url('${url}') no-repeat center center fixed`;
+                document.body.style.backgroundSize = 'cover';
+                config.wallpaper = url;
+                showNotification('🖼️ Fondo actualizado', 'success');
+                saveConfig();
+            };
+            img.onerror = function() {
+                showNotification('❌ URL no válida', 'error');
+            };
+            img.src = url;
+        }
+        saveConfig();
+    }
+    
+    function openWallpaperSelector() {
+        let url = prompt('🔧 INGRESA URL DE LA IMAGEN:\n\nEjemplos:\n- https://images.unsplash.com/photo-...\n- https://i.imgur.com/xxxx.jpg\n\n(Deja vacío para fondo por defecto)');
+        if (url === null) return;
+        setWallpaper(url.trim() || 'default');
+    }
+
+    // ==================== MIKE-IA INTERFAZ ====================
+    async function executeMike() {
+        let input = document.getElementById('mike-in');
+        let msg = input.value;
+        if (!msg) return;
+        let display = document.getElementById('mike-display');
+        display.innerHTML += `<div>> ${msg}</div>`;
+        
+        // Indicador de carga
+        display.innerHTML += `<div class="sys-msg">⏳ MIKE: Conectando a red neuronal...</div>`;
+        display.scrollTop = display.scrollHeight;
+        
+        const respuesta = await queryMikeAI(msg, `Comandante Saúl. Sistema operativo Nexus OS v2.0`);
+        
+        // Reemplazar el indicador con la respuesta
+        const lastElement = display.lastElementChild;
+        if (lastElement && lastElement.innerHTML.includes('Conectando a red neuronal')) {
+            lastElement.remove();
+        }
+        display.innerHTML += `<div class="mike-msg">🤖 MIKE: ${respuesta}</div>`;
+        input.value = '';
+        display.scrollTop = display.scrollHeight;
+        
+        // Guardar en historial
+        config.conversationHistory.push({ role: 'assistant', content: respuesta });
+        saveConfig();
+    }
+    
+    function talkMike(e) { if (e.key === 'Enter') executeMike(); }
+
+    // ==================== KERNEL ARCHITECT ====================
+    function runArch(e) {
+        if (e.key === 'Enter') {
+            let val = document.getElementById('arch-in').value.trim();
+            let log = document.getElementById('arch-log');
+            let parts = val.toUpperCase().split(' ');
+            log.innerHTML += `<br>> ${val}`;
+            
+            if (parts[0] === 'THEME' && parts[1]) { 
+                document.body.style.background = parts[1].toLowerCase();
+                document.body.style.backgroundImage = 'none';
+                config.theme = parts[1].toLowerCase();
+                config.wallpaper = 'default';
+                saveConfig();
+                log.innerHTML += `<br><span class='success-msg'>[OK] Tema: ${parts[1]}</span>`; 
+            }
+            else if (parts[0] === 'WALLPAPER' && parts[1]) {
+                setWallpaper(val.substring(9).trim());
+                log.innerHTML += `<br><span class='success-msg'>[OK] Aplicando wallpaper...</span>`;
+            }
+            else if (val.toUpperCase() === 'MATRIX ON') { startMatrixEffect(); config.matrixEnabled = true; saveConfig(); log.innerHTML += `<br><span class='success-msg'>[OK] Matrix activado</span>`; }
+            else if (val.toUpperCase() === 'MATRIX OFF') { stopMatrixEffect(); config.matrixEnabled = false; saveConfig(); log.innerHTML += `<br><span class='success-msg'>[OK] Matrix desactivado</span>`; }
+            else if (val.toUpperCase() === 'CLEAR') { log.innerHTML = '> Kernel log limpiado'; }
+            else if (val.toUpperCase() === 'STATUS') { log.innerHTML += `<br><span class='sys-msg'>[INFO] Kernel v2.0 | IA: ${aiStatus} | Fondo: ${config.wallpaper === 'default' ? 'defecto' : 'custom'}</span>`; }
+            else { log.innerHTML += `<br><span class='error-msg'>[ERROR] Comandos: THEME COLOR | WALLPAPER URL | MATRIX ON/OFF | STATUS | CLEAR</span>`; }
+            
+            document.getElementById('arch-in').value = '';
+            log.scrollTop = log.scrollHeight;
+        }
+    }
+
+    // ==================== NAVEGADOR ====================
+    function loadUrl() {
+        let url = document.getElementById('url-field').value;
+        if (!url.startsWith('http')) url = 'https://' + url;
+        document.getElementById('browser-frame').src = url;
+        document.getElementById('browser-status').innerHTML = incognitoMode ? '🕶️ MODO INCÓGNITO' : '🔒 Modo Normal';
+    }
+    function toggleIncognito() { incognitoMode = !incognitoMode; showNotification(`Incógnito: ${incognitoMode ? 'ON' : 'OFF'}`, 'info'); loadUrl(); }
+
+    // ==================== MATRIX EFECTO ====================
+    function startMatrixEffect() {
+        if (matrixInterval) return;
+        let canvas = document.getElementById('matrix-canvas');
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        let ctx = canvas.getContext('2d');
+        let chars = "01アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン";
+        let fontSize = 14;
+        let columns = canvas.width / fontSize;
+        let drops = Array(Math.floor(columns)).fill(1);
+        function draw() {
+            if (!canvas.parentNode || !config.matrixEnabled) return;
+            ctx.fillStyle = 'rgba(0,0,0,0.05)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = '#0f0';
+            ctx.font = fontSize + 'px monospace';
+            for (let i = 0; i < drops.length; i++) {
+                let text = chars[Math.floor(Math.random() * chars.length)];
+                ctx.fillText(text, i * fontSize, drops[i] * fontSize);
+                if (drops[i] * fontSize > canvas.height && Math.random() > 0.975) drops[i] = 0;
+                drops[i]++;
+            }
+        }
+        matrixInterval = setInterval(draw, 50);
+    }
+    function stopMatrixEffect() { if (matrixInterval) { clearInterval(matrixInterval); matrixInterval = null; } }
+
+    // ==================== UI HELPERS ====================
+    function showNotification(msg, type) {
+        let notif = document.createElement('div');
+        notif.className = 'notification';
+        notif.style.borderColor = type === 'error' ? '#ff4444' : type === 'success' ? '#44ff44' : '#0f0';
+        notif.innerHTML = msg;
+        document.body.appendChild(notif);
+        setTimeout(() => notif.remove(), 3000);
+    }
+
+    function toggleStart() {
+        let m = document.getElementById('start-menu');
+        m.style.display = m.style.display === 'block' ? 'none' : 'block';
+    }
+
+    function openW(id) {
+        let win = document.getElementById(id);
+        win.style.display = 'block';
+        if (!activeWindows.includes(id)) activeWindows.push(id);
+        updateTaskbar();
+        toggleStart();
+        centerWindowIfNeeded(win);
+    }
+
+    function centerWindowIfNeeded(win) {
+        let rect = win.getBoundingClientRect();
+        if (rect.left < 0 || rect.top < 0 || rect.left > window.innerWidth - 100) {
+            win.style.left = Math.max(20, (window.innerWidth - rect.width) / 2) + 'px';
+            win.style.top = Math.max(20, (window.innerHeight - rect.height) / 2) + 'px';
+        }
+    }
+
+    function closeW(id) {
+        document.getElementById(id).style.display = 'none';
+        activeWindows = activeWindows.filter(w => w !== id);
+        updateTaskbar();
+    }
+
+    function updateTaskbar() {
+        let container = document.getElementById('taskbar-buttons');
+        if (!container) return;
+        container.innerHTML = '';
+        activeWindows.forEach(winId => {
+            let btn = document.createElement('div');
+            btn.className = 'taskbar-window';
+            let name = winId.replace('win-', '').toUpperCase();
+            btn.innerHTML = name;
+            btn.onclick = () => {
+                let win = document.getElementById(winId);
+                if (win.style.display === 'block') {
+                    win.style.display = 'none';
+                    btn.classList.remove('active');
+                } else {
+                    win.style.display = 'block';
+                    btn.classList.add('active');
+                }
+            };
+            container.appendChild(btn);
+        });
+    }
+
+    // DRAG AND DROP
+    let dragTarget = null, dragOffsetX = 0, dragOffsetY = 0;
+    function setupDrag() {
+        document.querySelectorAll('.title-bar').forEach(bar => {
+            bar.addEventListener('mousedown', (e) => {
+                let win = bar.closest('.window');
+                if (!win) return;
+                dragTarget = win;
+                dragOffsetX = e.clientX - win.offsetLeft;
+                dragOffsetY = e.clientY - win.offsetTop;
+                win.style.zIndex = 999;
+                document.addEventListener('mousemove', onMouseMove);
+                document.addEventListener('mouseup', onMouseUp);
+                e.preventDefault();
+            });
+        });
+    }
+    function onMouseMove(e) {
+        if (!dragTarget) return;
+        let newLeft = e.clientX - dragOffsetX;
+        let newTop = e.clientY - dragOffsetY;
+        newLeft = Math.max(0, Math.min(newLeft, window.innerWidth - dragTarget.offsetWidth));
+        newTop = Math.max(0, Math.min(newTop, window.innerHeight - dragTarget.offsetHeight - 45));
+        dragTarget.style.left = newLeft + 'px';
+        dragTarget.style.top = newTop + 'px';
+    }
+    function onMouseUp() { dragTarget = null; document.removeEventListener('mousemove', onMouseMove); document.removeEventListener('mouseup', onMouseUp); }
+
+    // RELOJ Y BOOT
+    function updateClock() {
+        let now = new Date();
+        document.getElementById('clock').innerHTML = now.toLocaleTimeString() + ' | ' + now.toLocaleDateString();
+        let sessionSpan = document.getElementById('session-stats');
+        if (sessionSpan && window.sessionStart) {
+            let mins = Math.floor((Date.now() - window.sessionStart) / 60000);
+            sessionSpan.innerHTML = `Sesión: ${mins} min | IA: ${aiStatus === 'online' ? '🌐' : '📡'}`;
+        }
+        setTimeout(updateClock, 1000);
+    }
+
+    function runBoot() {
+        let f = document.getElementById('p-fill'), t = document.getElementById('status-text'), l = 0;
+        let i = setInterval(() => {
+            l += Math.floor(Math.random() * 5) + 2;
+            if (l > 100) l = 100;
+            f.style.width = l + "%";
+            t.innerText = "SISTEMA INICIANDO: " + l + "%";
+            if (l === 100) {
+                clearInterval(i);
+                setTimeout(() => {
+                    document.getElementById('boot').style.display = 'none';
+                    document.getElementById('desktop').style.display = 'flex';
+                    window.sessionStart = Date.now();
+                    
+                    if (config.wallpaper && config.wallpaper !== 'default') setWallpaper(config.wallpaper);
+                    else if (config.theme) document.body.style.background = config.theme;
+                    if (config.matrixEnabled) startMatrixEffect();
+                    
+                    showNotification('✅ NEXUS OS v2.0 | MIKE-IA CONECTADO A INTERNET', 'success');
+                }, 500);
+            }
+        }, 40);
+    }
+
+    // ATAJOS DE TECLADO
+    document.addEventListener('keydown', (e) => {
+        if (e.ctrlKey && e.key === 'w') { e.preventDefault(); activeWindows.forEach(id => { if (document.getElementById(id).style.display === 'block') closeW(id); }); }
+        if (e.ctrlKey && e.altKey && e.key === 't') { e.preventDefault(); openW('win-terminal'); }
+        if (e.ctrlKey && e.altKey && e.key === 'w') { e.preventDefault(); openWallpaperSelector(); }
+        if (e.key === 'Escape') { document.getElementById('start-menu').style.display = 'none'; }
+    });
+
+    // INICIALIZACIÓN
+    window.onload = () => {
+        runBoot();
+        setupDrag();
+        updateClock();
+        refreshFileExplorer();
+        setInterval(() => refreshFileExplorer(), 5000);
+        
+        // Verificar conexión a internet
+        fetch('https://api.github.com', { mode: 'no-cors' }).then(() => {
+            aiStatus = 'online';
+            showNotification('🌐 MIKE-IA conectada a internet. ¡Pregúntale cualquier cosa!', 'success');
+        }).catch(() => {
+            aiStatus = 'local';
+            showNotification('⚠️ MIKE en modo local. Conecta a internet para respuestas avanzadas.', 'info');
+        });
+    };
+</script>
