@@ -1,0 +1,572 @@
+<div class="start-item" onclick="openW('win-app-creator')">🛠️ Creador de Apps</div>
+<div class="start-item" onclick="openW('win-app-import')">📦 Importar App</div>
+
+<!-- Ventana Creador de Apps -->
+<div class="window" id="win-app-creator" style="width: 650px; height: 600px; top: 80px; left: 150px;">
+    <div class="title-bar"><span>🛠️ Nexus App Creator - Crea tus propias apps</span><button class="win-btn" onclick="closeW('win-app-creator')">X</button></div>
+    <div class="win-content">
+        <div style="display: grid; gap: 15px;">
+            <div>
+                <label>📝 Nombre de la App:</label>
+                <input type="text" id="app-name" style="width:100%; padding:8px; border:2px inset #fff;" placeholder="Mi App Asombrosa">
+            </div>
+            <div>
+                <label>🎨 Icono (emoji o texto):</label>
+                <input type="text" id="app-icon" style="width:100%; padding:8px;" placeholder="🚀" maxlength="2">
+            </div>
+            <div>
+                <label>📄 Descripción:</label>
+                <textarea id="app-desc" rows="2" style="width:100%; padding:8px;" placeholder="Describe tu aplicación..."></textarea>
+            </div>
+            <div>
+                <label>🎨 Color de fondo de la app:</label>
+                <input type="color" id="app-bg-color" value="#1a1a2e">
+            </div>
+            <div>
+                <label>💻 Código HTML/JavaScript de tu app:</label>
+                <textarea id="app-code" rows="10" style="width:100%; padding:8px; font-family: monospace; font-size:12px;" placeholder='&lt;div style="padding:20px;"&gt;
+    &lt;h2&gt;¡Mi Primera App!&lt;/h2&gt;
+    &lt;button onclick="alert(&apos;Hola Nexus!&apos;)"&gt;Click me&lt;/button&gt;
+&lt;/div&gt;
+
+&lt;script&gt;
+    // Tu código JavaScript aquí
+    console.log("App iniciada");
+&lt;/script&gt;'></textarea>
+            </div>
+            <div style="display: flex; gap: 10px;">
+                <button class="win-btn" onclick="previewCustomApp()">👁️ Vista Previa</button>
+                <button class="win-btn" onclick="installCustomApp()">📦 Instalar App</button>
+                <button class="win-btn" onclick="exportCustomApp()">💾 Exportar (.nexapp)</button>
+            </div>
+            <div id="app-preview" style="border: 2px inset #fff; background: #fff; min-height: 200px; padding: 10px; display: none;">
+                <strong>Vista Previa:</strong>
+                <div id="preview-content"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Ventana Importar App -->
+<div class="window" id="win-app-import" style="width: 500px; height: 400px; top: 100px; left: 200px;">
+    <div class="title-bar"><span>📦 Importar App Personalizada</span><button class="win-btn" onclick="closeW('win-app-import')">X</button></div>
+    <div class="win-content">
+        <div style="text-align: center; padding: 20px;">
+            <div style="font-size: 60px; margin-bottom: 20px;">📦</div>
+            <p>Importa una app desde un archivo <strong>.nexapp</strong> o pega el código JSON</p>
+            <div style="margin: 20px 0;">
+                <input type="file" id="import-file" accept=".nexapp,.json" style="width:100%; padding: 10px;">
+            </div>
+            <div style="margin: 10px 0;">
+                <label>O pega el código JSON:</label>
+                <textarea id="import-json" rows="8" style="width:100%; padding:8px; font-family:monospace; font-size:12px;" placeholder='{"name":"Mi App","icon":"🚀","code":"..."}'></textarea>
+            </div>
+            <button class="win-btn" onclick="importCustomApp()" style="width:100%;">📥 IMPORTAR APP</button>
+        </div>
+    </div>
+</div>
+
+    // ==================== SISTEMA DE APPS PERSONALIZADAS ====================
+    
+    // Estructura de apps personalizadas
+    let customApps = JSON.parse(localStorage.getItem('nexus_custom_apps')) || [];
+    
+    function saveCustomApps() {
+        localStorage.setItem('nexus_custom_apps', JSON.stringify(customApps));
+        updateStartMenu();
+        renderCustomAppsInStore();
+    }
+    
+    // Instalar app personalizada
+    function installCustomApp() {
+        const name = document.getElementById('app-name').value.trim();
+        const icon = document.getElementById('app-icon').value.trim() || '📱';
+        const description = document.getElementById('app-desc').value.trim();
+        const bgColor = document.getElementById('app-bg-color').value;
+        const code = document.getElementById('app-code').value;
+        
+        if (!name || !code) {
+            showNotification('❌ Nombre y código son obligatorios', 'error');
+            return;
+        }
+        
+        const newApp = {
+            id: 'custom_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6),
+            name: name,
+            icon: icon,
+            description: description || 'App personalizada creada en Nexus',
+            bgColor: bgColor,
+            code: code,
+            developer: 'Usuario Nexus',
+            version: '1.0',
+            category: 'custom',
+            size: Math.ceil(code.length / 1024) + ' KB',
+            isCustom: true
+        };
+        
+        customApps.push(newApp);
+        
+        // También añadir al catálogo de apps instaladas
+        if (!config.installedApps) config.installedApps = [];
+        if (!config.installedApps.includes(newApp.id)) {
+            config.installedApps.push(newApp.id);
+        }
+        
+        saveCustomApps();
+        saveConfig();
+        
+        // Crear acceso directo en escritorio
+        addCustomAppToDesktop(newApp);
+        
+        showNotification(`✅ App "${name}" instalada correctamente`, 'success');
+        
+        // Limpiar formulario
+        document.getElementById('app-name').value = '';
+        document.getElementById('app-code').value = '';
+        document.getElementById('app-desc').value = '';
+        document.getElementById('app-icon').value = '📱';
+        
+        // Ocultar preview
+        document.getElementById('app-preview').style.display = 'none';
+        
+        // Actualizar tienda
+        if (document.getElementById('app-store-grid')) renderAppStore();
+        
+        closeW('win-app-creator');
+    }
+    
+    // Vista previa de la app
+    function previewCustomApp() {
+        const code = document.getElementById('app-code').value;
+        const bgColor = document.getElementById('app-bg-color').value;
+        const previewDiv = document.getElementById('app-preview');
+        const previewContent = document.getElementById('preview-content');
+        
+        if (!code) {
+            showNotification('❌ Escribe código para previsualizar', 'error');
+            return;
+        }
+        
+        previewDiv.style.display = 'block';
+        
+        // Crear un iframe para sandbox seguro
+        const iframe = document.createElement('iframe');
+        iframe.style.width = '100%';
+        iframe.style.height = '300px';
+        iframe.style.border = 'none';
+        iframe.style.background = bgColor;
+        iframe.sandbox = 'allow-same-origin allow-scripts allow-popups allow-forms';
+        
+        const htmlContent = `
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="UTF-8">
+                <style>
+                    * { margin: 0; padding: 0; box-sizing: border-box; }
+                    body { 
+                        font-family: system-ui, -apple-system, sans-serif;
+                        background: ${bgColor};
+                        color: ${getContrastColor(bgColor)};
+                        padding: 15px;
+                    }
+                </style>
+            </head>
+            <body>
+                ${code}
+            </body>
+            </html>
+        `;
+        
+        previewContent.innerHTML = '';
+        iframe.srcdoc = htmlContent;
+        previewContent.appendChild(iframe);
+    }
+    
+    function getContrastColor(hex) {
+        // Convertir hex a RGB y determinar si es claro u oscuro
+        const r = parseInt(hex.slice(1,3), 16);
+        const g = parseInt(hex.slice(3,5), 16);
+        const b = parseInt(hex.slice(5,7), 16);
+        const brightness = (r * 299 + g * 587 + b * 114) / 1000;
+        return brightness > 128 ? '#000000' : '#ffffff';
+    }
+    
+    // Exportar app como archivo .nexapp
+    function exportCustomApp() {
+        const name = document.getElementById('app-name').value.trim();
+        const icon = document.getElementById('app-icon').value.trim() || '📱';
+        const description = document.getElementById('app-desc').value.trim();
+        const bgColor = document.getElementById('app-bg-color').value;
+        const code = document.getElementById('app-code').value;
+        
+        if (!name || !code) {
+            showNotification('❌ Nombre y código son obligatorios', 'error');
+            return;
+        }
+        
+        const appData = {
+            name: name,
+            icon: icon,
+            description: description || 'App personalizada Nexus',
+            bgColor: bgColor,
+            code: code,
+            developer: 'Usuario Nexus',
+            version: '1.0',
+            created: new Date().toISOString()
+        };
+        
+        const jsonStr = JSON.stringify(appData, null, 2);
+        const blob = new Blob([jsonStr], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${name.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.nexapp`;
+        a.click();
+        URL.revokeObjectURL(url);
+        
+        showNotification(`💾 App exportada como ${a.download}`, 'success');
+    }
+    
+    // Importar app desde archivo
+    function importCustomApp() {
+        const fileInput = document.getElementById('import-file');
+        const jsonInput = document.getElementById('import-json').value;
+        
+        if (fileInput.files.length > 0) {
+            const file = fileInput.files[0];
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const appData = JSON.parse(e.target.result);
+                    importAppData(appData);
+                } catch(err) {
+                    showNotification('❌ Archivo inválido', 'error');
+                }
+            };
+            reader.readAsText(file);
+        } else if (jsonInput.trim()) {
+            try {
+                const appData = JSON.parse(jsonInput);
+                importAppData(appData);
+            } catch(err) {
+                showNotification('❌ JSON inválido', 'error');
+            }
+        } else {
+            showNotification('❌ Selecciona un archivo o pega JSON', 'error');
+        }
+    }
+    
+    function importAppData(appData) {
+        if (!appData.name || !appData.code) {
+            showNotification('❌ Datos incompletos: nombre y código requeridos', 'error');
+            return;
+        }
+        
+        const newApp = {
+            id: 'imported_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6),
+            name: appData.name,
+            icon: appData.icon || '📦',
+            description: appData.description || 'App importada',
+            bgColor: appData.bgColor || '#1a1a2e',
+            code: appData.code,
+            developer: appData.developer || 'Importado',
+            version: appData.version || '1.0',
+            category: 'imported',
+            size: Math.ceil(appData.code.length / 1024) + ' KB',
+            isCustom: true
+        };
+        
+        customApps.push(newApp);
+        
+        if (!config.installedApps.includes(newApp.id)) {
+            config.installedApps.push(newApp.id);
+        }
+        
+        saveCustomApps();
+        saveConfig();
+        addCustomAppToDesktop(newApp);
+        
+        showNotification(`✅ App "${newApp.name}" importada`, 'success');
+        
+        // Limpiar campos
+        document.getElementById('import-file').value = '';
+        document.getElementById('import-json').value = '';
+        
+        closeW('win-app-import');
+        
+        if (document.getElementById('app-store-grid')) renderAppStore();
+    }
+    
+    // Añadir app personalizada al escritorio
+    function addCustomAppToDesktop(app) {
+        const desktop = document.getElementById('desktop');
+        const existingIcon = document.getElementById(`desktop-icon-${app.id}`);
+        if (existingIcon) return;
+        
+        const icon = document.createElement('div');
+        icon.id = `desktop-icon-${app.id}`;
+        icon.className = 'icon';
+        icon.onclick = () => launchCustomApp(app.id);
+        icon.innerHTML = `
+            <span style="font-size: 45px; display: block;">${app.icon}</span>
+            <span>${app.name}</span>
+        `;
+        desktop.appendChild(icon);
+    }
+    
+    // Lanzar app personalizada
+    function launchCustomApp(appId) {
+        const app = customApps.find(a => a.id === appId);
+        if (!app) return;
+        
+        const winId = 'win-custom-' + appId;
+        
+        // Verificar si ya existe la ventana
+        let existingWin = document.getElementById(winId);
+        if (existingWin) {
+            existingWin.style.display = 'block';
+            existingWin.style.zIndex = 999;
+            return;
+        }
+        
+        const win = document.createElement('div');
+        win.id = winId;
+        win.className = 'window';
+        win.style.cssText = `width: 650px; height: 550px; top: 80px; left: 150px; background: ${app.bgColor || '#d4d0c8'};`;
+        
+        win.innerHTML = `
+            <div class="title-bar" style="background: ${app.bgColor ? '#2c3e50' : 'linear-gradient(90deg, var(--win-blue), #1084d0)'};">
+                <span>${app.icon} ${app.name}</span>
+                <button class="win-btn" onclick="closeW('${winId}')">X</button>
+            </div>
+            <div class="win-content" style="background: ${app.bgColor || '#d4d0c8'}; padding: 0; overflow: hidden;">
+                <iframe id="app-frame-${appId}" style="width:100%; height:450px; border:none;" sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-modals"></iframe>
+            </div>
+            <div style="padding: 8px; background: #e0e0e0; font-size: 11px; display: flex; justify-content: space-between;">
+                <span>📱 ${app.name} v${app.version}</span>
+                <button class="win-btn" onclick="uninstallCustomApp('${app.id}', '${winId}')" style="background:#800000; color:white;">🗑️ Desinstalar</button>
+            </div>
+        `;
+        
+        document.body.appendChild(win);
+        
+        // Cargar código en iframe
+        const iframe = win.querySelector(`#app-frame-${appId}`);
+        const htmlContent = `
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <style>
+                    * { margin: 0; padding: 0; box-sizing: border-box; }
+                    body { 
+                        font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+                        background: ${app.bgColor || '#ffffff'};
+                        color: ${app.bgColor ? getContrastColor(app.bgColor) : '#000000'};
+                        padding: 20px;
+                        line-height: 1.5;
+                    }
+                    button, input, textarea, select {
+                        font-family: inherit;
+                        padding: 8px 12px;
+                        border: 1px solid #ccc;
+                        border-radius: 6px;
+                        background: white;
+                        cursor: pointer;
+                    }
+                    button:hover {
+                        background: #f0f0f0;
+                    }
+                </style>
+            </head>
+            <body>
+                ${app.code}
+                <script>
+                    // API de Nexus para apps personalizadas
+                    window.NexusAPI = {
+                        showNotification: function(msg, type) {
+                            window.parent.postMessage({ type: 'notification', msg: msg, notificationType: type }, '*');
+                        },
+                        getSystemInfo: function() {
+                            return {
+                                os: 'Nexus OS v2.0',
+                                user: 'Comandante Saúl',
+                                timestamp: new Date().toISOString()
+                            };
+                        },
+                        saveData: function(key, value) {
+                            localStorage.setItem('nexus_app_' + key, JSON.stringify(value));
+                        },
+                        loadData: function(key) {
+                            const data = localStorage.getItem('nexus_app_' + key);
+                            return data ? JSON.parse(data) : null;
+                        }
+                    };
+                    
+                    // Escuchar notificaciones
+                    window.addEventListener('message', function(e) {
+                        if (e.data.type === 'notification') {
+                            alert(e.data.msg);
+                        }
+                    });
+                <\/script>
+            </body>
+            </html>
+        `;
+        
+        iframe.srcdoc = htmlContent;
+        
+        // Escuchar mensajes del iframe
+        window.addEventListener('message', function(e) {
+            if (e.data.type === 'notification') {
+                showNotification(e.data.msg, e.data.notificationType || 'info');
+            }
+        });
+        
+        openW(winId);
+    }
+    
+    // Desinstalar app personalizada
+    function uninstallCustomApp(appId, winId) {
+        if (confirm('¿Estás seguro de desinstalar esta app?')) {
+            const index = customApps.findIndex(a => a.id === appId);
+            if (index > -1) customApps.splice(index, 1);
+            
+            const installIndex = config.installedApps.indexOf(appId);
+            if (installIndex > -1) config.installedApps.splice(installIndex, 1);
+            
+            saveCustomApps();
+            saveConfig();
+            
+            // Remover del escritorio
+            const desktopIcon = document.getElementById(`desktop-icon-${appId}`);
+            if (desktopIcon) desktopIcon.remove();
+            
+            // Cerrar ventana
+            if (winId) closeW(winId);
+            
+            showNotification(`🗑️ App desinstalada`, 'info');
+            
+            // Actualizar tienda
+            if (document.getElementById('app-store-grid')) renderAppStore();
+        }
+    }
+    
+    // Mostrar apps personalizadas en la tienda
+    function renderCustomAppsInStore() {
+        const storeGrid = document.getElementById('app-store-grid');
+        if (!storeGrid) return;
+        
+        // Añadir sección de apps personalizadas si hay
+        if (customApps.length > 0) {
+            customApps.forEach(app => {
+                const isInstalled = config.installedApps.includes(app.id);
+                const card = document.createElement('div');
+                card.style.cssText = 'background: #e0e0e0; border: 2px inset #fff; padding: 12px; border-radius: 8px; border-left: 4px solid #ff6600;';
+                card.innerHTML = `
+                    <div style="font-size: 40px; text-align: center;">${app.icon}</div>
+                    <h3 style="margin: 8px 0 4px; font-size: 14px;">${app.name}</h3>
+                    <p style="font-size: 10px; color: #555;">${app.description.substring(0, 50)}</p>
+                    <p style="font-size: 9px; color: #orange;">✨ Personalizada | ${app.size}</p>
+                    <button class="win-btn" onclick="launchCustomApp('${app.id}')" 
+                        style="width: 100%; margin-top: 8px; background: #ff6600; color: white;">
+                        🚀 ABRIR
+                    </button>
+                    <button class="win-btn" onclick="uninstallCustomApp('${app.id}')" 
+                        style="width: 100%; margin-top: 4px; background: #800000; color: white;">
+                        🗑️ DESINSTALAR
+                    </button>
+                `;
+                storeGrid.appendChild(card);
+            });
+        }
+    }
+    
+    // Actualizar renderAppStore original para incluir apps personalizadas
+    const originalRenderAppStore = renderAppStore;
+    window.renderAppStore = function() {
+        if (originalRenderAppStore) originalRenderAppStore();
+        renderCustomAppsInStore();
+    };
+    
+    // API para desarrolladores
+    window.NexusDevAPI = {
+        registerApp: function(appData) {
+            const newApp = {
+                id: 'dev_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6),
+                name: appData.name,
+                icon: appData.icon || '🛠️',
+                description: appData.description || 'App de desarrollador',
+                bgColor: appData.bgColor || '#1a1a2e',
+                code: appData.code,
+                developer: appData.developer || 'Dev',
+                version: appData.version || '1.0',
+                isCustom: true
+            };
+            customApps.push(newApp);
+            if (!config.installedApps.includes(newApp.id)) config.installedApps.push(newApp.id);
+            saveCustomApps();
+            saveConfig();
+            addCustomAppToDesktop(newApp);
+            showNotification(`✅ App ${newApp.name} registrada`, 'success');
+            return newApp.id;
+        },
+        
+        getInstalledApps: function() {
+            return [...appCatalog, ...customApps].filter(app => config.installedApps.includes(app.id));
+        }
+    };
+
+        function launchApp(appId) {
+        // Verificar si es app personalizada primero
+        const customApp = customApps.find(a => a.id === appId);
+        if (customApp) {
+            launchCustomApp(appId);
+            return;
+        }
+        
+        // Apps nativas
+        switch(appId) {
+            case 'calculadora': createCalculatorApp(); break;
+            case 'reproductor': createMediaPlayer(); break;
+            case 'notas': createNotepadApp(); break;
+            case 'juego_2048': createGame2048(); break;
+            case 'pomodoro': createPomodoroApp(); break;
+            case 'clima': createWeatherApp(); break;
+            case 'dibujo': createDrawingApp(); break;
+            default: showNotification(`App no encontrada`, 'error');
+        }
+    }
+        function updateStartMenu() {
+        const startMenu = document.getElementById('start-menu');
+        if (!startMenu) return;
+        
+        // Remover sección de apps existente
+        const existingSection = document.getElementById('start-apps-section');
+        if (existingSection) existingSection.remove();
+        
+        // Crear sección de apps instaladas
+        const appsSection = document.createElement('div');
+        appsSection.id = 'start-apps-section';
+        appsSection.innerHTML = '<div class="start-header" style="margin-top: 10px;">📱 MIS APPS</div>';
+        
+        // Apps nativas instaladas
+        config.installedApps.forEach(appId => {
+            // Buscar en catálogo nativo
+            let app = appCatalog.find(a => a.id === appId);
+            // Buscar en apps personalizadas
+            if (!app) app = customApps.find(a => a.id === appId);
+            
+            if (app) {
+                const item = document.createElement('div');
+                item.className = 'start-item';
+                item.onclick = () => launchApp(app.id);
+                item.innerHTML = `${app.icon} ${app.name}`;
+                appsSection.appendChild(item);
+            }
+        });
+        
+        startMenu.appendChild(appsSection);
+    }
