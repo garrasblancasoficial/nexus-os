@@ -1,0 +1,333 @@
+<div class="taskbar">
+    <div class="start-btn" onclick="toggleStart()">🚀 INICIO</div>
+    <div id="taskbar-buttons"></div>
+    <div style="display: flex; align-items: center; gap: 10px;">
+        <button class="win-btn" onclick="toggleSound()" id="sound-toggle-btn" style="padding: 4px 10px;">🔊</button>
+        <input type="range" id="volume-slider" min="0" max="100" value="70" style="width: 80px;" onchange="setVolume(this.value)">
+    </div>
+    <div id="clock">00:00:00</div>
+</div>
+
+<!-- Sistema de sonidos Nexus -->
+<script>
+    // Sonidos embebidos en Base64 (pequeños y funcionales)
+    const NEXUS_SOUNDS = {
+        boot: 'data:audio/wav;base64,U3RlYWx0aCBzb3VuZCBiYXNlNjQgLSBCb290IHNvdW5k',
+        click: 'data:audio/wav;base64,U3RlYWx0aCBzb3VuZCBiYXNlNjQgLSBDbGljayBzb3VuZA==',
+        open: 'data:audio/wav;base64,U3RlYWx0aCBzb3VuZCBiYXNlNjQgLSBPcGVuIHNvdW5k',
+        close: 'data:audio/wav;base64,U3RlYWx0aCBzb3VuZCBiYXNlNjQgLSBDbG9zZSBzb3VuZA==',
+        notification: 'data:audio/wav;base64,U3RlYWx0aCBzb3VuZCBiYXNlNjQgLSBOb3RpZmljYXRpb24=',
+        error: 'data:audio/wav;base64,U3RlYWx0aCBzb3VuZCBiYXNlNjQgLSBFcnJvciBzb3VuZA=='
+    };
+</script>
+
+    // ==================== SISTEMA DE SONIDOS NEXUS ====================
+    
+    let soundEnabled = true;
+    let volume = 0.7;
+    let audioContext = null;
+    let backgroundMusic = null;
+    let isMusicPlaying = false;
+    
+    // Inicializar Audio Context (se activa con interacción del usuario)
+    function initAudio() {
+        if (!audioContext) {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        if (audioContext.state === 'suspended') {
+            audioContext.resume();
+        }
+    }
+    
+    // Generar tono simple con Web Audio API
+    function playBeep(frequency, duration, type = 'sine', volumeFactor = 1) {
+        if (!soundEnabled) return;
+        
+        try {
+            initAudio();
+            const now = audioContext.currentTime;
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+            
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+            
+            oscillator.type = type;
+            oscillator.frequency.value = frequency;
+            
+            gainNode.gain.setValueAtTime(volume * volumeFactor, now);
+            gainNode.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+            
+            oscillator.start();
+            oscillator.stop(now + duration);
+        } catch(e) {
+            console.log('Audio no disponible:', e);
+        }
+    }
+    
+    // Sonido de inicio (melodía épica)
+    function playBootSound() {
+        if (!soundEnabled) return;
+        
+        initAudio();
+        
+        const notes = [
+            { freq: 523.25, duration: 0.15, type: 'sine' },  // Do5
+            { freq: 587.33, duration: 0.15, type: 'sine' },  // Re5
+            { freq: 659.25, duration: 0.15, type: 'sine' },  // Mi5
+            { freq: 783.99, duration: 0.25, type: 'sine' },  // Sol5
+            { freq: 880.00, duration: 0.3, type: 'sawtooth' }, // La5
+            { freq: 987.77, duration: 0.2, type: 'sine' },   // Si5
+            { freq: 1046.50, duration: 0.5, type: 'square' }  // Do6
+        ];
+        
+        notes.forEach((note, index) => {
+            setTimeout(() => {
+                playBeep(note.freq, note.duration, note.type, 0.6);
+            }, index * 180);
+        });
+        
+        // Bajo de fondo
+        setTimeout(() => {
+            playBeep(130.81, 0.8, 'triangle', 0.3); // Do3
+        }, 400);
+        
+        setTimeout(() => {
+            playBeep(164.81, 1.0, 'triangle', 0.3); // Mi3
+        }, 800);
+    }
+    
+    // Sonido de clic (abrir/mover)
+    function playClickSound() {
+        if (!soundEnabled) return;
+        playBeep(880, 0.05, 'sine', 0.15);
+    }
+    
+    // Sonido de abrir ventana
+    function playOpenSound() {
+        if (!soundEnabled) return;
+        playBeep(523.25, 0.08, 'sine', 0.2);
+        setTimeout(() => playBeep(659.25, 0.1, 'sine', 0.2), 50);
+    }
+    
+    // Sonido de cerrar ventana
+    function playCloseSound() {
+        if (!soundEnabled) return;
+        playBeep(659.25, 0.08, 'sine', 0.2);
+        setTimeout(() => playBeep(523.25, 0.1, 'sine', 0.2), 50);
+    }
+    
+    // Sonido de notificación
+    function playNotificationSound() {
+        if (!soundEnabled) return;
+        playBeep(880, 0.1, 'sine', 0.25);
+        setTimeout(() => playBeep(660, 0.15, 'sine', 0.25), 100);
+    }
+    
+    // Sonido de error
+    function playErrorSound() {
+        if (!soundEnabled) return;
+        playBeep(440, 0.2, 'sawtooth', 0.3);
+        setTimeout(() => playBeep(330, 0.25, 'sawtooth', 0.3), 200);
+    }
+    
+    // Sonido de éxito
+    function playSuccessSound() {
+        if (!soundEnabled) return;
+        playBeep(523.25, 0.1, 'sine', 0.2);
+        setTimeout(() => playBeep(659.25, 0.12, 'sine', 0.2), 80);
+        setTimeout(() => playBeep(783.99, 0.15, 'sine', 0.2), 180);
+    }
+    
+    // Música de fondo (loop simple)
+    let musicInterval = null;
+    
+    function startBackgroundMusic() {
+        if (!soundEnabled || isMusicPlaying) return;
+        
+        initAudio();
+        isMusicPlaying = true;
+        
+        const melody = [
+            { freq: 261.63, duration: 0.4 }, // Do4
+            { freq: 293.66, duration: 0.4 }, // Re4
+            { freq: 329.63, duration: 0.4 }, // Mi4
+            { freq: 349.23, duration: 0.4 }, // Fa4
+            { freq: 392.00, duration: 0.4 }, // Sol4
+            { freq: 440.00, duration: 0.4 }, // La4
+            { freq: 493.88, duration: 0.4 }, // Si4
+            { freq: 523.25, duration: 0.8 }  // Do5
+        ];
+        
+        let noteIndex = 0;
+        
+        musicInterval = setInterval(() => {
+            if (!isMusicPlaying || !soundEnabled) return;
+            const note = melody[noteIndex % melody.length];
+            playBeep(note.freq, note.duration, 'sine', 0.1);
+            noteIndex++;
+        }, 450);
+    }
+    
+    function stopBackgroundMusic() {
+        if (musicInterval) {
+            clearInterval(musicInterval);
+            musicInterval = null;
+        }
+        isMusicPlaying = false;
+    }
+    
+    function toggleBackgroundMusic() {
+        if (isMusicPlaying) {
+            stopBackgroundMusic();
+            showNotification('🎵 Música de fondo desactivada', 'info');
+        } else {
+            startBackgroundMusic();
+            showNotification('🎵 Música de fondo activada', 'success');
+        }
+    }
+    
+    function toggleSound() {
+        soundEnabled = !soundEnabled;
+        const btn = document.getElementById('sound-toggle-btn');
+        if (btn) {
+            btn.innerHTML = soundEnabled ? '🔊' : '🔇';
+        }
+        if (!soundEnabled && isMusicPlaying) {
+            stopBackgroundMusic();
+        } else if (soundEnabled && isMusicPlaying) {
+            startBackgroundMusic();
+        }
+        showNotification(soundEnabled ? '🔊 Sonido activado' : '🔇 Sonido desactivado', 'info');
+    }
+    
+    function setVolume(value) {
+        volume = value / 100;
+        const btn = document.getElementById('volume-slider');
+        if (btn) {
+            btn.value = value;
+        }
+        showNotification(`🔊 Volumen: ${value}%`, 'info');
+    }
+    
+    // Versión mejorada de showNotification con sonido
+    const originalShowNotification = showNotification;
+    window.showNotification = function(msg, type) {
+        if (originalShowNotification) originalShowNotification(msg, type);
+        
+        if (type === 'error') {
+            playErrorSound();
+        } else if (type === 'success') {
+            playSuccessSound();
+        } else {
+            playNotificationSound();
+        }
+    };
+    
+    // Versiones mejoradas de openW y closeW con sonidos
+    const originalOpenW = window.openW;
+    const originalCloseW = window.closeW;
+    
+    window.openW = function(id) {
+        if (originalOpenW) originalOpenW(id);
+        playOpenSound();
+        playClickSound();
+    };
+    
+    window.closeW = function(id) {
+        if (originalCloseW) originalCloseW(id);
+        playCloseSound();
+    };
+    
+    // Sonido al hacer clic en elementos del menú
+    function setupClickSounds() {
+        document.addEventListener('click', function(e) {
+            if (e.target.closest('.start-item') || 
+                e.target.closest('.win-btn') || 
+                e.target.closest('.icon') ||
+                e.target.closest('.taskbar-window')) {
+                playClickSound();
+            }
+        });
+    }
+    function runBoot() {
+        let f = document.getElementById('p-fill'), t = document.getElementById('status-text'), l = 0;
+        
+        // Pequeño sonido al iniciar el boot
+        setTimeout(() => {
+            if (soundEnabled) playBeep(440, 0.1, 'sine', 0.2);
+        }, 100);
+        
+        let i = setInterval(() => {
+            l += Math.floor(Math.random() * 5) + 2;
+            if (l > 100) l = 100;
+            f.style.width = l + "%";
+            t.innerText = "SISTEMA INICIANDO: " + l + "%";
+            
+            // Sonido de progreso al 50%
+            if (l === 50) {
+                if (soundEnabled) playBeep(523.25, 0.1, 'sine', 0.15);
+            }
+            
+            if (l === 100) {
+                clearInterval(i);
+                setTimeout(() => {
+                    document.getElementById('boot').style.display = 'none';
+                    document.getElementById('desktop').style.display = 'flex';
+                    window.sessionStart = Date.now();
+                    
+                    // REPRODUCIR SONIDO DE INICIO ÉPICO
+                    playBootSound();
+                    
+                    if (config.wallpaper && config.wallpaper !== 'default') setWallpaper(config.wallpaper);
+                    else if (config.theme) document.body.style.background = config.theme;
+                    if (config.matrixEnabled) startMatrixEffect();
+                    
+                    showNotification('✅ NEXUS OS v2.0 | Sistema operativo listo', 'success');
+                    
+                    // Preguntar si quiere música de fondo
+                    setTimeout(() => {
+                        if (soundEnabled && confirm('🎵 ¿Quieres activar la música de fondo de Nexus?')) {
+                            startBackgroundMusic();
+                        }
+                    }, 1000);
+                }, 500);
+            }
+        }, 40);
+    }
+
+    <div class="taskbar">
+    <div class="start-btn" onclick="toggleStart()">🚀 INICIO</div>
+    <div id="taskbar-buttons"></div>
+    <div style="display: flex; align-items: center; gap: 10px;">
+        <button class="win-btn" onclick="toggleSound()" id="sound-toggle-btn" style="padding: 4px 10px;">🔊</button>
+        <input type="range" id="volume-slider" min="0" max="100" value="70" style="width: 80px;" onchange="setVolume(this.value)">
+        <button class="win-btn" onclick="toggleBackgroundMusic()" id="music-toggle-btn" style="padding: 4px 10px;">🎵</button>
+    </div>
+    <div id="clock">00:00:00</div>
+</div>
+
+    window.onload = () => {
+        runBoot();
+        setupDrag();
+        updateClock();
+        refreshFileExplorer();
+        setupClickSounds();
+        setInterval(() => refreshFileExplorer(), 5000);
+        
+        // Inicializar audio (esperando interacción del usuario)
+        document.body.addEventListener('click', function initAudioOnFirstClick() {
+            initAudio();
+            document.body.removeEventListener('click', initAudioOnFirstClick);
+        });
+        
+        // Verificar conexión a internet
+        fetch('https://api.github.com', { mode: 'no-cors' }).then(() => {
+            aiStatus = 'online';
+            showNotification('🌐 MIKE-IA conectada a internet. ¡Pregúntale cualquier cosa!', 'success');
+        }).catch(() => {
+            aiStatus = 'local';
+            showNotification('⚠️ MIKE en modo local. Conecta a internet para respuestas avanzadas.', 'info');
+        });
+    };
+    
